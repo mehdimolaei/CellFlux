@@ -60,14 +60,19 @@ class CFGScaledModel(ModelWrapper):
         ), f"Cfg scaling does not work for the logit outputs of discrete models. Got cfg weight={cfg_scale} and model {type(self.model)}."
         t = torch.zeros(x.shape[0], device=x.device) + t
 
+        # Device-aware autocast: fp16 autocast only on CUDA; full fp32 on CPU/MPS
+        # (torch.cuda.amp.autocast() warns and misbehaves off-CUDA).
+        dev_type = x.device.type
+        autocast_ctx = torch.autocast(device_type=dev_type, enabled=(dev_type == "cuda"))
+
         if cfg_scale != 0.0:
-            with torch.cuda.amp.autocast(), torch.no_grad():
+            with autocast_ctx, torch.no_grad():
                 conditional = self.model(x, t, extra=extra)
                 condition_free = self.model(x, t, extra={})
             result = (1.0 + cfg_scale) * conditional - cfg_scale * condition_free
         else:
             # Model is fully conditional, no cfg weighting needed
-            with torch.cuda.amp.autocast(), torch.no_grad():
+            with autocast_ctx, torch.no_grad():
                 result = self.model(x, t, extra=extra)
 
         self.nfe_counter += 1
@@ -113,7 +118,10 @@ def eval_model(
         solver = ODESolver(velocity_model=cfg_scaled_model)
         ode_opts = args.ode_options
 
-    fid_metric = FrechetInceptionDistance(normalize=True).to(
+    # FID uses InceptionV3, which is heavy and may hit unsupported ops on MPS.
+    # --skip_fid bypasses it entirely (useful for CPU/MPS image generation).
+    skip_fid = getattr(args, "skip_fid", False)
+    fid_metric = None if skip_fid else FrechetInceptionDistance(normalize=True).to(
         device=device, non_blocking=True
     )
 
@@ -176,6 +184,9 @@ def eval_model(
                     time_grid = get_time_discretization(nfes=ode_opts["nfe"])
                 else:
                     time_grid = torch.tensor([0.0, 1.0], device=device)
+                # MPS has no float64; the EDM grid is float64. Cast it down on MPS.
+                if device.type == "mps":
+                    time_grid = time_grid.to(torch.float32)
 
                 synthetic_samples = solver.sample(
                     time_grid=time_grid,
@@ -224,13 +235,12 @@ def eval_model(
             if num_synthetic + synthetic_samples.shape[0] > fid_samples:
                 synthetic_samples = synthetic_samples[: fid_samples - num_synthetic]
             
-            real_samples = torch.clamp(x_real_trt * 0.5 + 0.5, min=0.0, max=1.0)
-            real_samples = torch.floor(real_samples * 255)
-            real_samples = real_samples.to(torch.float32) / 255.0
-            
-            
-            fid_metric.update(real_samples, real=True)
-            fid_metric.update(synthetic_samples, real=False)
+            if fid_metric is not None:
+                real_samples = torch.clamp(x_real_trt * 0.5 + 0.5, min=0.0, max=1.0)
+                real_samples = torch.floor(real_samples * 255)
+                real_samples = real_samples.to(torch.float32) / 255.0
+                fid_metric.update(real_samples, real=True)
+                fid_metric.update(synthetic_samples, real=False)
             num_synthetic += synthetic_samples.shape[0]
             if not snapshots_saved and args.output_dir:
                 save_image(
@@ -274,6 +284,8 @@ def eval_model(
     with open(f'{image_dir}/trt2ctrl_idx.json', 'w') as f:
         json.dump(trt2ctrl_idx, f, indent=4)
         f.flush()
+    if fid_metric is None:
+        return {}
     return {"fid": float(fid_metric.compute().detach().cpu())}
 
 

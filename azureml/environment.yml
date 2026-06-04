@@ -1,0 +1,9 @@
+$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+name: cellflux-env
+version: "1"
+# A standard AML GPU base image supplies the NVIDIA driver/userspace; the exact
+# CUDA 12.4 libs come from the pip 'nvidia-*-cu12' + torch==2.5.1+cu124 wheels in
+# the repo's environment.yml, which AML builds into this conda environment.
+image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04
+conda_file: ../environment.yml
+description: CellFlux conda env (PyTorch 2.5.1 + cu124, flow-matching) for AML GPU jobs.

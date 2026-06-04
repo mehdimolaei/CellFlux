@@ -1,0 +1,13 @@
+$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+type: uri_folder
+name: cellflux-bbbc021
+version: "1"
+description: >-
+  BBBC021 pre-processed CellFlux data: the .npy image tree plus the
+  bbbc021_df_all.csv index and emb_fp.csv embeddings. Point `path` at the folder
+  in your blob where download_assets.py (--upload-blob) staged the data.
+# Option A: reference blob via a registered datastore (recommended)
+#   path: azureml://datastores/<datastore_name>/paths/cellflux/bbbc021
+# Option B: reference the blob URL directly
+#   path: https://<account>.blob.core.windows.net/<container>/cellflux/bbbc021
+path: azureml://datastores/workspaceblobstore/paths/cellflux/bbbc021
