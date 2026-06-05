@@ -1,0 +1,8 @@
+$schema: https://azuremlschemas.azureedge.net/latest/data.schema.json
+type: uri_folder
+name: cellflux-bbbc021-ckpt
+version: "1"
+description: >-
+  Folder containing the BBBC021 generator checkpoint.pth (from HuggingFace
+  suyc21/CellFlux, staged to blob by download_assets.py --upload-blob).
+path: azureml://datastores/workspaceblobstore/paths/cellflux/checkpoints/bbbc021
